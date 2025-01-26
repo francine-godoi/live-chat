@@ -35,34 +35,43 @@ def aceitar_conexao_cliente(servidor):
 
 def receber_mensagens(cliente):
     while True:
+        # TODO: tratar do erro ConnectionResetError, quando todos os clientes disconectam
         mensagem = cliente.recv(2048).decode(FORMATO_CODIFICACAO)
         if mensagem.startswith("!username"):
-            adicionar_usuario(cliente, mensagem)
+            salvar_usuario_conectado(cliente, mensagem)
         elif mensagem.startswith("/"):
             chamar_bot(cliente, mensagem)
         else:
             enviar_mensagem_publica(cliente, mensagem)
 
 
-def adicionar_usuario(cliente, mensagem):
+def salvar_usuario_conectado(cliente, mensagem):
+
+    if username := pegar_username(cliente, mensagem):
+        clientes_conectados[username] = cliente
+        enviar_alerta_do_servidor("Conectado com sucesso.", cliente)
+        enviar_alerta_do_servidor(f"<{username}> entrou no chat.", privado=False)
+        #TODO: socket concatenando mensagens, resolver
+
+def pegar_username(cliente, mensagem):
     username = mensagem.split(":")
-    if existe_usuario(username[1]):
-        enviar_alerta_do_servidor('Usuário já existe.', cliente)
+    if username[1] in clientes_conectados:
+        enviar_alerta_do_servidor("Usuário já existe.", cliente)
         return
-
-    clientes_conectados[username[1]] = cliente
-    enviar_alerta_do_servidor('Conectado com sucesso.', cliente)
-    enviar_alerta_do_servidor(f'<{username[1]}> entrou no chat.', privado=False)
-
-
-def existe_usuario(username):
-    return username in clientes_conectados
+    return username[1]
 
 
 def enviar_mensagem_publica(remetente, mensagem):
-    for usuario, cliente in clientes_conectados.items():
+    usuario_remetente = next(
+        filter(lambda key: clientes_conectados[key] == remetente, clientes_conectados)
+    )
+    for cliente in clientes_conectados.values():
         if cliente != remetente:
-            cliente.send(f"<{usuario}> disse: {mensagem}".encode(FORMATO_CODIFICACAO))
+            cliente.send(
+                f"<{usuario_remetente}> disse: {mensagem}".encode(
+                    FORMATO_CODIFICACAO
+                )
+            )
 
 
 def enviar_alerta_do_servidor(mensagem, cliente=None, privado=True):
