@@ -84,7 +84,7 @@ def salvar_usuario_conectado(cliente: socket, mensagem: str) -> str | None:
     if not username:
         return None
     clientes_conectados[username] = cliente
-    enviar_alerta_do_servidor("Conectado com sucesso.", cliente=cliente)
+    enviar_notificacao_privada("Conectado com sucesso.", cliente)
     return username
 
 
@@ -100,10 +100,10 @@ def pegar_username_escolhido(cliente: socket, mensagem: str) -> str | None:
     """
     username = mensagem.split(":")
     if not username[1]:
-        enviar_alerta_do_servidor("Digite um usuário.", cliente=cliente)
+        enviar_notificacao_privada("Digite um usuário.", cliente)
         return None
     if username[1] in clientes_conectados:
-        enviar_alerta_do_servidor("Usuário já existe.", cliente=cliente)
+        enviar_notificacao_privada("Usuário já existe.", cliente)
         return None
     return username[1]
 
@@ -117,14 +117,11 @@ def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
     sala_escolhida = pegar_sala_escolhida(cliente)
     salas[sala_escolhida].append(username)
 
-    enviar_alerta_do_servidor(
-        f"<{username}> entrou no chat.", nome_sala=sala_escolhida, privado=False
-    )
-    print(salas)
+    enviar_notificacao_publica(f"<{username}> entrou no chat.", sala_escolhida)
 
 
 def pegar_sala_escolhida(cliente: socket) -> str:
-    """Envia para o cliente as salas disponíveis e pega sua escolha
+    """ Pega sala escolhida
 
     Args:
         cliente (socket): socket para comunicação com o cliente
@@ -132,11 +129,20 @@ def pegar_sala_escolhida(cliente: socket) -> str:
     Returns:
         str: nome da sala escolhida
     """
-    salas_disponiveis = "|".join(sala for sala in salas)
-    cliente.send(salas_disponiveis.encode(FORMATO_CODIFICACAO))
+    enviar_salas_disponiveis(cliente)
 
     sala_escolhida = cliente.recv(25).decode(FORMATO_CODIFICACAO)
     return sala_escolhida
+
+
+def enviar_salas_disponiveis(cliente: socket) -> None:
+    """Envia para o cliente as salas disponíveis
+
+    Args:
+        cliente (socket): socket para comunicação com o cliente
+    """
+    salas_disponiveis = "|".join(sala for sala in salas)
+    cliente.send(salas_disponiveis.encode(FORMATO_CODIFICACAO))
 
 
 def enviar_mensagem_publica(remetente: socket, mensagem: str) -> None:
@@ -186,25 +192,26 @@ def pegar_sala_do_cliente(username: str) -> str | None:
     return None
 
 
-def enviar_alerta_do_servidor(
-    mensagem: str, nome_sala: str = None, cliente: socket = None, privado: bool = True
-) -> None:
-    """Mensagens de alerta do sistema, enviados de forma privada
-       ou publica para os membros de uma determinada sala.
+def enviar_notificacao_privada(mensagem: str, cliente: socket) -> None:
+    """Notificação do sistema, enviados de forma privada
 
     Args:
         mensagem (str): Mensagem a ser enviada
-        nome_sala (str, optional): Nome da sala que receberá o alerta,
-                                   caso mensagem publica. Defaults to None.
-        cliente (socket, optional): socket do cliente caso mensagem privada. Defaults to None.
-        privado (bool, optional): Decide se a mensagem será publica ou privada. Defaults to True.
+        cliente (socket): socket do cliente caso mensagem privada. Defaults to None.
     """
-    if privado:
-        cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
-    else:
-        for username, cliente_conectado in clientes_conectados.items():
-            if username in salas[nome_sala]:
-                cliente_conectado.send(mensagem.encode(FORMATO_CODIFICACAO))
+    cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
+
+
+def enviar_notificacao_publica(mensagem: str, nome_sala: str) -> None:
+    """Notificação do sistema, enviados para os membros de uma determinada sala.
+
+    Args:
+        mensagem (str): Mensagem a ser enviada
+        nome_sala (str): Nome da sala que receberá o alerta        
+    """
+    for username, cliente in clientes_conectados.items():
+        if username in salas[nome_sala]:
+            cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
 
 
 def chamar_bot(cliente, mensagem):
