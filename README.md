@@ -2,7 +2,7 @@
 
 ## 📋 Descrição
 
-Terceiro mini projeto (via terminal) aplicando conceitos vistos durante minha jornada para aprender Python:
+Terceiro projeto (via terminal) aplicando conceitos vistos durante minha jornada para aprender Python:
 
     1. Lógica de programação
     2. Socket
