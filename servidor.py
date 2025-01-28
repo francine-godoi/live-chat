@@ -9,7 +9,6 @@ FORMATO_CODIFICACAO = "utf-8"
 HOST = "127.0.0.1"
 PORT = 9999
 
-bot = []
 clientes_conectados = {}
 moderadores = {}
 salas = defaultdict(list)
@@ -142,8 +141,8 @@ def enviar_mensagem_publica(remetente: socket, mensagem: str) -> None:
 
 def chamar_bot(cliente: socket, mensagem: str) -> None:
     """Envia a mensagem com o comando para o bot precessar"""
-    enviar_notificacao_privada(mensagem, bot[0])
-    resposta = bot[0].recv(1024).decode(FORMATO_CODIFICACAO)
+    enviar_notificacao_privada(mensagem, clientes_conectados["!bot!"])
+    resposta = clientes_conectados["!bot!"].recv(1024).decode(FORMATO_CODIFICACAO)
     cliente.send(f"<bot> disse: {resposta}".encode(FORMATO_CODIFICACAO))
 
 
@@ -159,7 +158,7 @@ def receber_mensagens(cliente: socket) -> None:
                 vincular_cliente_e_sala_escolhida(cliente, username)
         elif mensagem == "!bot!":
             # Salva os dados de conexão do bot
-            bot.append(cliente)
+            clientes_conectados["!bot!"] = cliente
         elif mensagem.startswith("/"):
             # Comandos especiais, responsabilidade do bot
             chamar_bot(cliente, mensagem)
