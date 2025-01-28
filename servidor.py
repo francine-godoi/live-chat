@@ -4,47 +4,41 @@ import socket
 import threading
 from collections import defaultdict
 
+
 FORMATO_CODIFICACAO = "utf-8"
 HOST = "127.0.0.1"
 PORT = 9999
 
+bot = []
 clientes_conectados = {}
-moderador = {}
+moderadores = {}
 salas = defaultdict(list)
 salas["Geral"] = []
 
 
 def enviar_notificacao_privada(mensagem: str, cliente: socket) -> None:
-    """Notificação do sistema, enviados de forma privada
+    """Notificação do sistema, enviados de forma privada"""
 
-    Args:
-        mensagem (str): Mensagem a ser enviada
-        cliente (socket): socket do cliente caso mensagem privada. Defaults to None.
-    """
     cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
 
 
 def enviar_notificacao_publica(mensagem: str, nome_sala: str) -> None:
-    """Notificação do sistema, enviados para os membros de uma determinada sala.
+    """Notificação do sistema, enviados para os membros de uma determinada sala."""
 
-    Args:
-        mensagem (str): Mensagem a ser enviada
-        nome_sala (str): Nome da sala que receberá o alerta
-    """
     for username, cliente in clientes_conectados.items():
         if username in salas[nome_sala]:
             cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
 
 
 def pegar_username_escolhido(cliente: socket, mensagem: str) -> str | None:
-    """Pega o username do cliente usando a mensagem recebida. Conexão Inicial.
+    """Pega o username do cliente usando a mensagem recebida.
+       Utilizado apenas durante a Conexão Inicial.
 
     Args:
-        cliente (socket): socket para comunicação com o cliente
-        mensagem (str): '!username:nome_usuario', usada para pegar o usuário
+        mensagem (str): '!username:nome_usuario'
 
     Returns:
-        str: username
+        str: username, se tiver
     """
     username = mensagem.split(":")
     if not username[1]:
@@ -60,8 +54,7 @@ def salvar_usuario_conectado(cliente: socket, mensagem: str) -> str | None:
     """Salva o usuário que acabou de conectar na lista de clientes conectados.
 
     Args:
-        cliente (socket): socket para comunicação com o cliente
-        mensagem (str): mensagem = '!username:nome_usuario', usada para pegar o usuário
+        mensagem (str): '!username:nome_usuario', usada para pegar o usuário
 
     Returns:
         str: username
@@ -75,20 +68,14 @@ def salvar_usuario_conectado(cliente: socket, mensagem: str) -> str | None:
 
 
 def enviar_salas_disponiveis(cliente: socket) -> None:
-    """Envia para o cliente as salas disponíveis
+    """Envia para o cliente as salas disponíveis"""
 
-    Args:
-        cliente (socket): socket para comunicação com o cliente
-    """
     salas_disponiveis = "|".join(sala for sala in salas)
     cliente.send(salas_disponiveis.encode(FORMATO_CODIFICACAO))
 
 
 def pegar_sala_escolhida(cliente: socket) -> str:
     """Pega sala escolhida
-
-    Args:
-        cliente (socket): socket para comunicação com o cliente
 
     Returns:
         str: nome da sala escolhida
@@ -99,25 +86,18 @@ def pegar_sala_escolhida(cliente: socket) -> str:
     return sala_escolhida
 
 
-def verificar_se_sala_existe(sala: str, username: str) -> None:
-    """Caso a sala não exista, o usuário a criou e portanto será seu moderador
+def adicionar_moderador(sala: str, username: str) -> None:
+    """Caso a sala não exista, o usuário a criou e portanto será seu moderador"""
 
-    Args:
-        sala (str): sala escolhida pelo usuario
-        username (str): username do usuario
-    """
     if sala not in salas:
-        moderador[username] = sala
+        moderadores[username] = sala
 
 
 def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
-    """Vincula o cliente a sala de conversas
+    """Vincula o cliente a sala de conversas"""
 
-    Args:
-        cliente (socket): socket para comunicação com o cliente
-    """
     sala_escolhida = pegar_sala_escolhida(cliente)
-    verificar_se_sala_existe(sala_escolhida, username)
+    adicionar_moderador(sala_escolhida, username)
     salas[sala_escolhida].append(username)
 
     enviar_notificacao_publica(f"<{username}> entrou no chat.", sala_escolhida)
@@ -125,9 +105,6 @@ def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
 
 def pegar_username_do_cliente(cliente: socket) -> str:
     """Filtra os clientes conectados para pegar o username do cliente.
-
-    Args:
-        cliente (socket): socket para comunicação com o cliente
 
     Returns:
         str: username
@@ -139,10 +116,7 @@ def pegar_username_do_cliente(cliente: socket) -> str:
 
 
 def pegar_sala_do_cliente(username: str) -> str | None:
-    """Filtra as salas para achar em qual sala está o username do cliente
-
-    Args:
-        username (str): nome do usuario
+    """Filtra as salas para achar em qual delas está o username do cliente
 
     Returns:
         str: nome da sala
@@ -154,12 +128,8 @@ def pegar_sala_do_cliente(username: str) -> str | None:
 
 
 def enviar_mensagem_publica(remetente: socket, mensagem: str) -> None:
-    """Envia mensagem para todos os membros da sala do cliente
+    """Envia mensagem para todos os membros da sala do cliente"""
 
-    Args:
-        cliente (socket): socket para comunicação com o cliente
-        mensagem (str): mensagem a ser enviada
-    """
     username_remetente = pegar_username_do_cliente(remetente)
     sala_do_remetente = pegar_sala_do_cliente(username_remetente)
 
@@ -170,16 +140,15 @@ def enviar_mensagem_publica(remetente: socket, mensagem: str) -> None:
             )
 
 
-def chamar_bot(cliente, mensagem):
-    print("bot aqui")
+def chamar_bot(cliente: socket, mensagem: str) -> None:
+    """Envia a mensagem com o comando para o bot precessar"""
+    enviar_notificacao_privada(mensagem, bot[0])
+    resposta = bot[0].recv(1024).decode(FORMATO_CODIFICACAO)
+    cliente.send(f"<bot> disse: {resposta}".encode(FORMATO_CODIFICACAO))
 
 
 def receber_mensagens(cliente: socket) -> None:
-    """Recebe e processa as mensagens dos clientes.
-
-    Args:
-        cliente (socket): socket para comunicação com o cliente
-    """
+    """Recebe e processa as mensagens dos clientes."""
 
     while True:
         mensagem = cliente.recv(2048).decode(FORMATO_CODIFICACAO)
@@ -188,11 +157,14 @@ def receber_mensagens(cliente: socket) -> None:
             username = salvar_usuario_conectado(cliente, mensagem)
             if username:
                 vincular_cliente_e_sala_escolhida(cliente, username)
+        elif mensagem == "!bot!":
+            # Salva os dados de conexão do bot
+            bot.append(cliente)
         elif mensagem.startswith("/"):
-            # comandos especiais, responsabilidade do bot
+            # Comandos especiais, responsabilidade do bot
             chamar_bot(cliente, mensagem)
         else:
-            # mensagens normais
+            # Mensagens normais
             enviar_mensagem_publica(cliente, mensagem)
 
 
@@ -217,11 +189,8 @@ def iniciar_servidor() -> socket:
 
 
 def aceitar_conexao_cliente(servidor: socket) -> None:
-    """Escuta conexão com clientes e inicia as threads.
+    """Escuta conexão com clientes e inicia as threads."""
 
-    Args:
-        servidor (socket): socket do servidor
-    """
     servidor.listen()
     while True:
         cliente, endereco = servidor.accept()
@@ -233,6 +202,7 @@ def aceitar_conexao_cliente(servidor: socket) -> None:
 
 def main() -> None:
     """Inicia o programa"""
+
     servidor = iniciar_servidor()
     aceitar_conexao_cliente(servidor)
 
