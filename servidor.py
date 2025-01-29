@@ -9,24 +9,20 @@ FORMATO_CODIFICACAO = "utf-8"
 HOST = "127.0.0.1"
 PORT = 9999
 
+# TODO criar persistencia
 clientes_conectados = {}
 moderadores = {}
 salas = defaultdict(list)
 salas["Geral"] = []
 
 
-def enviar_notificacao_privada(mensagem: str, cliente: socket) -> None:
-    """Notificação do sistema, enviados de forma privada"""
+# TODO: rever essa função, já tem enviar_mensagem_publica
+# def enviar_notificacao_publica(mensagem: str, nome_sala: str) -> None:
+#     """Notificação do sistema, enviados para os membros de uma determinada sala."""
 
-    cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
-
-
-def enviar_notificacao_publica(mensagem: str, nome_sala: str) -> None:
-    """Notificação do sistema, enviados para os membros de uma determinada sala."""
-
-    for username, cliente in clientes_conectados.items():
-        if username in salas[nome_sala]:
-            cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
+#     for username, cliente in clientes_conectados.items():
+#         if username in salas[nome_sala]:
+#             cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
 
 
 def pegar_username_escolhido(cliente: socket, mensagem: str) -> str | None:
@@ -41,10 +37,10 @@ def pegar_username_escolhido(cliente: socket, mensagem: str) -> str | None:
     """
     username = mensagem.split(":")
     if not username[1]:
-        enviar_notificacao_privada("Digite um usuário.", cliente)
+        enviar_mensagem_privada("Digite um usuário.", cliente)
         return None
     if username[1] in clientes_conectados:
-        enviar_notificacao_privada("Usuário já existe.", cliente)
+        enviar_mensagem_privada("Usuário já existe.", cliente)
         return None
     return username[1]
 
@@ -62,7 +58,7 @@ def salvar_usuario_conectado(cliente: socket, mensagem: str) -> str | None:
     if not username:
         return None
     clientes_conectados[username] = cliente
-    enviar_notificacao_privada("Conectado com sucesso.", cliente)
+    enviar_mensagem_privada("Conectado com sucesso.", cliente)
     return username
 
 
@@ -85,7 +81,7 @@ def pegar_sala_escolhida(cliente: socket) -> str:
     return sala_escolhida
 
 
-def adicionar_moderador(sala: str, username: str) -> None:
+def adicionar_moderador_sala(sala: str, username: str) -> None:
     """Caso a sala não exista, o usuário a criou e portanto será seu moderador"""
 
     if sala not in salas:
@@ -96,10 +92,12 @@ def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
     """Vincula o cliente a sala de conversas"""
 
     sala_escolhida = pegar_sala_escolhida(cliente)
-    adicionar_moderador(sala_escolhida, username)
+    adicionar_moderador_sala(sala_escolhida, username)
     salas[sala_escolhida].append(username)
 
-    enviar_notificacao_publica(f"<{username}> entrou no chat.", sala_escolhida)
+    enviar_mensagem_publica(
+        f"<{username}> entrou no chat.", sala_escolhida, remetente="Servidor"
+    )
 
 
 def pegar_username_do_cliente(cliente: socket) -> str:
@@ -126,24 +124,52 @@ def pegar_sala_do_cliente(username: str) -> str | None:
     return None
 
 
-def enviar_mensagem_publica(remetente: socket, mensagem: str) -> None:
+def enviar_mensagem_publica(mensagem: str, sala_remetente: str, remetente: str) -> None:
     """Envia mensagem para todos os membros da sala do cliente"""
 
-    username_remetente = pegar_username_do_cliente(remetente)
-    sala_do_remetente = pegar_sala_do_cliente(username_remetente)
-
     for username, cliente in clientes_conectados.items():
-        if username in salas[sala_do_remetente] and username != username_remetente:
-            cliente.send(
-                f"<{username_remetente}> disse: {mensagem}".encode(FORMATO_CODIFICACAO)
-            )
+        if username in salas[sala_remetente] and username != remetente:
+            cliente.send(f"<{remetente}> disse: {mensagem}".encode(FORMATO_CODIFICACAO))
+
+
+def enviar_mensagem_privada(mensagem: str, cliente: socket) -> None:
+    """Notificação do sistema, enviados de forma privada"""
+
+    cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
 
 
 def chamar_bot(cliente: socket, mensagem: str) -> None:
     """Envia a mensagem com o comando para o bot precessar"""
-    enviar_notificacao_privada(mensagem, clientes_conectados["!bot!"])
+    # TODO Verificar falta de conexão com bot
+    username = pegar_username_do_cliente(cliente)
+    sala = pegar_sala_do_cliente(username)
+    info_para_bot = f"{username}:{sala}|{mensagem}"
+
+    enviar_mensagem_privada(info_para_bot, clientes_conectados["!bot!"])
     resposta = clientes_conectados["!bot!"].recv(1024).decode(FORMATO_CODIFICACAO)
+    # TODO Tratar de mensagens 'para:' e 'sair|'
     cliente.send(f"<bot> disse: {resposta}".encode(FORMATO_CODIFICACAO))
+
+
+def processar_mensagens(mensagem: str, cliente: socket):
+    """Envia a mensagem para a função adequada"""
+
+    if mensagem.startswith("!username"):
+        # Conexão inicial, salva username e sala do novo usuário
+        username = salvar_usuario_conectado(cliente, mensagem)
+        if username:
+            vincular_cliente_e_sala_escolhida(cliente, username)
+    elif mensagem == "!bot!":
+        # Salva os dados de conexão do bot
+        clientes_conectados[mensagem] = cliente
+    elif mensagem.startswith("/"):
+        # Comandos especiais, responsabilidade do bot
+        chamar_bot(cliente, mensagem)
+    else:
+        # Mensagens normais
+        remetente = pegar_username_do_cliente(cliente)
+        sala_do_remetente = pegar_sala_do_cliente(remetente)
+        enviar_mensagem_publica(mensagem, sala_do_remetente, remetente)
 
 
 def receber_mensagens(cliente: socket) -> None:
@@ -151,20 +177,19 @@ def receber_mensagens(cliente: socket) -> None:
 
     while True:
         mensagem = cliente.recv(2048).decode(FORMATO_CODIFICACAO)
-        if mensagem.startswith("!username"):
-            # Conexão inicial, salva username e sala do novo usuário
-            username = salvar_usuario_conectado(cliente, mensagem)
-            if username:
-                vincular_cliente_e_sala_escolhida(cliente, username)
-        elif mensagem == "!bot!":
-            # Salva os dados de conexão do bot
-            clientes_conectados["!bot!"] = cliente
-        elif mensagem.startswith("/"):
-            # Comandos especiais, responsabilidade do bot
-            chamar_bot(cliente, mensagem)
-        else:
-            # Mensagens normais
-            enviar_mensagem_publica(cliente, mensagem)
+        processar_mensagens(mensagem, cliente)
+
+
+def aceitar_conexao_cliente(servidor: socket) -> None:
+    """Escuta conexão com clientes e inicia as threads."""
+
+    servidor.listen()
+    while True:
+        cliente, endereco = servidor.accept()
+        print(f"Cliente conectado com sucesso. IP {endereco}")
+
+        thread = threading.Thread(target=receber_mensagens, args=(cliente,))
+        thread.start()
 
 
 def iniciar_servidor() -> socket:
@@ -185,18 +210,6 @@ def iniciar_servidor() -> socket:
         exit()
 
     return servidor
-
-
-def aceitar_conexao_cliente(servidor: socket) -> None:
-    """Escuta conexão com clientes e inicia as threads."""
-
-    servidor.listen()
-    while True:
-        cliente, endereco = servidor.accept()
-        print(f"Cliente conectado com sucesso. IP {endereco}")
-
-        thread = threading.Thread(target=receber_mensagens, args=(cliente,))
-        thread.start()
 
 
 def main() -> None:
