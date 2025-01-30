@@ -12,14 +12,14 @@ PORT = 9999
 FORMATO_CODIFICACAO = "utf-8"
 
 
-def enviar_resposta_servidor(mensagem, bot):
+def enviar_resposta_servidor(mensagem: str, bot_socket: socket):
     """Envia mensagem do bot após processar o comando enviado pelo usuário"""
-    bot.send(mensagem.encode(FORMATO_CODIFICACAO))
+    bot_socket.send(mensagem.encode(FORMATO_CODIFICACAO))
 
 
-def ajuda(bot: socket) -> None:
+def ajuda(cliente: str, bot_socket: socket) -> None:
     """Para listar os comandos disponíveis."""
-
+    
     comandos = """
         Comandos Especiais:
         /ajuda: Para listar os comandos disponíveis.
@@ -36,24 +36,24 @@ def ajuda(bot: socket) -> None:
         /banir nome_usuario: Usuários banidos não podem acessar a sala.
         /expulsar nome_usuario: Desconecta usuário da sala.
     """
-    enviar_resposta_servidor(comandos, bot)
+    enviar_resposta_servidor(f'{cliente}|{comandos}', bot_socket)
 
 
-def historico(sala, bot):
+def historico(sala, bot_socket):
     """mostra histórico do chat."""
     pass
 
 
-def hora(bot):
+def hora(bot_socket):
     """mostra a hora atual."""
     horas = datetime.now().strftime("%H:%M")
-    enviar_resposta_servidor(horas, bot)
+    enviar_resposta_servidor(horas, bot_socket)
 
 
-def nome(nome_atual, novo_nome, sala, bot):
+def nome(nome_atual, novo_nome, sala, bot_socket):
     """Para alterar o nome de exibição do usuário."""
     if novo_nome in clientes_conectados:
-        enviar_resposta_servidor("Username já existe", bot)
+        enviar_resposta_servidor("Username já existe", bot_socket)
         # TODO Testar com usernames que já existem
 
     clientes_conectados[novo_nome] = clientes_conectados[nome_atual]
@@ -66,28 +66,28 @@ def nome(nome_atual, novo_nome, sala, bot):
         moderadores[novo_nome] = moderadores[nome_atual]
         del moderadores[nome_atual]
 
-    enviar_resposta_servidor(f"{nome_atual} agora se chama {novo_nome}", bot)
+    enviar_resposta_servidor(f"{nome_atual} agora se chama {novo_nome}", bot_socket)
 
 
-def ping(bot):
+def ping(cliente: str, bot_socket):
     """o bot responde com "pong" para testar a conectividade."""
-    enviar_resposta_servidor("pong", bot)
+    enviar_resposta_servidor(f'{cliente}|pong', bot_socket)
 
 
-def privado(destinatario, mensagem, bot):
+def privado(destinatario, mensagem, bot_socket):
     """envia mensagem privada."""
     resposta = f"para:{destinatario}|{mensagem}"
-    enviar_resposta_servidor(resposta, bot)
+    enviar_resposta_servidor(resposta, bot_socket)
 
 
-def sair(username, sala, bot):
+def sair(username, sala, bot_socket):
     """Para desconectar do chat."""
     del clientes_conectados[username]
     salas[sala].remove(username)
-    enviar_resposta_servidor(f"sair|{username} sai da sala.", bot)
+    enviar_resposta_servidor(f"sair|{username} sai da sala.", bot_socket)
 
 
-def stats(username, sala, bot):
+def stats(username, sala, bot_socket):
     """Mostrar informações do chat:
     número total de mensagens enviadas,
     tempo total de atividade do chat,
@@ -95,18 +95,18 @@ def stats(username, sala, bot):
     pass
 
 
-def usuarios(sala, bot):
+def usuarios(sala, bot_socket):
     """Para listar todos os usuários conectados."""
     mensagem = "\n".join(usuario for usuario in salas[sala])
-    enviar_resposta_servidor(mensagem, bot)
+    enviar_resposta_servidor(mensagem, bot_socket)
 
 
-def banir(username, nome_usuario, sala, bot):
+def banir(username, nome_usuario, sala, bot_socket):
     """Desconecta usuário e o adiciona a uma lista de clientes que não podem acessar a sala."""
     pass
 
 
-def expulsar(username, nome_usuario, sala, bot):
+def expulsar(username, nome_usuario, sala, bot_socket):
     """Desconecta usuário da sala, mas usuario pode voltar ao chat."""
     pass
 
@@ -115,25 +115,25 @@ def extrair_dados_da_mensagem(informacao: str) -> tuple:
     """Separa as informações da mensagem
 
     Returns:
-        tuple: username, sala, Comando, Usuário afetado pelo comando, Texto da mensagem(se tiver)
+        tuple: cliente, sala, Comando, Usuário afetado pelo comando, Texto da mensagem(se tiver)
     """
     info_usuario, mensagem = informacao.split("|")
     cliente, sala = info_usuario.split(":")
 
     if mensagem.find(" ") == -1:
         # Se não tem espaço, a mensagem é o comando
-        comando = informacao
+        comando = mensagem
         nome_usuario = ""
         texto_da_mensagem = ""
     else:
         # Caso tenha espaço, o comando tem argumentos
-        comando, nome_usuario, *texto_da_mensagem = informacao.split(" ")
+        comando, nome_usuario, *texto_da_mensagem = mensagem.split(" ")
         texto_da_mensagem = " ".join(texto_da_mensagem)
 
     return (cliente, sala, comando, nome_usuario, texto_da_mensagem)
 
 
-def processar_comando(mensagem: str, bot: socket) -> None:
+def processar_comando(mensagem: str, bot_socket: socket) -> None:
     """Envia o comando para a função responsável por sua execução"""
     cliente, sala, comando, nome_usuario, texto_da_mensagem = extrair_dados_da_mensagem(
         mensagem
@@ -141,37 +141,37 @@ def processar_comando(mensagem: str, bot: socket) -> None:
 
     match comando:
         case "/ajuda":
-            ajuda(bot)
+            ajuda(cliente, bot_socket)
         case "/banir":
-            banir(cliente, nome_usuario, sala, bot)
+            banir(cliente, nome_usuario, sala, bot_socket)
         case "/expulsar":
-            expulsar(cliente, nome_usuario, sala, bot)
+            expulsar(cliente, nome_usuario, sala, bot_socket)
         case "/historico":
-            historico(sala, bot)
+            historico(sala, bot_socket)
         case "/hora":
-            hora(bot)
+            hora(bot_socket)
         case "/nome":
-            nome(cliente, nome_usuario, sala, bot)
+            nome(cliente, nome_usuario, sala, bot_socket)
         case "/ping":
-            ping(bot)
+            ping(cliente, bot_socket)
         case "/privado":
-            privado(nome_usuario, texto_da_mensagem, bot)
+            privado(nome_usuario, texto_da_mensagem, bot_socket)
         case "/sair":
-            sair(cliente, sala, bot)
+            sair(cliente, sala, bot_socket)
         case "/stats":
-            stats(cliente, sala, bot)
+            stats(cliente, sala, bot_socket)
         case "/usuarios":
-            usuarios(sala, bot)
+            usuarios(sala, bot_socket)
         case _:
-            enviar_resposta_servidor("Comando inválido", bot)
+            enviar_resposta_servidor("Comando inválido", bot_socket)
 
 
-def receber_comando(bot: socket) -> None:
+def receber_comando(bot_socket: socket) -> None:
     """Recebe comando enviado pelo cliente"""
 
     while True:
-        comando = bot.recv(1024).decode(FORMATO_CODIFICACAO)
-        processar_comando(comando, bot)
+        comando = bot_socket.recv(1024).decode(FORMATO_CODIFICACAO)
+        processar_comando(comando, bot_socket)
 
 
 def conectar_servidor() -> socket:
@@ -180,23 +180,23 @@ def conectar_servidor() -> socket:
     Returns:
         socket: socket de comunicação com o servidor
     """
-    bot = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    bot_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        bot.connect((HOST, PORT))
-        bot.send("!bot!".encode(FORMATO_CODIFICACAO))
+        bot_socket.connect((HOST, PORT))
+        bot_socket.send("!bot!".encode(FORMATO_CODIFICACAO))
     except ConnectionRefusedError:
         print("Não foi possível conectar com o servidor.")
     except Exception as e:
         print(f"Um erro ocorreu ao tentar conectar com o servidor: {e}")
 
-    return bot
+    return bot_socket
 
 
 def main():
     """Inicia o bot"""
-    bot = conectar_servidor()
+    bot_socket = conectar_servidor()
 
-    thread_receber_comando = threading.Thread(target=receber_comando, args=(bot,))
+    thread_receber_comando = threading.Thread(target=receber_comando, args=(bot_socket,))
     thread_receber_comando.start()
 
 
