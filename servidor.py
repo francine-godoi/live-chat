@@ -133,9 +133,15 @@ def enviar_mensagem_publica(mensagem: str, sala_remetente: str, remetente: str) 
 
 
 def enviar_mensagem_privada(mensagem: str, cliente: socket) -> None:
-    """Notificação do sistema, enviados de forma privada"""
+    """Mensagem enviados de forma privada"""
 
     cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
+
+def processar_resposta_bot(resposta: str):
+    username, mensagem = resposta.split('|')
+    cliente = clientes_conectados[username]
+    # TODO Tratar de mensagens 'para:' e 'sair|'
+    cliente.send(f"<bot> disse: {mensagem}".encode(FORMATO_CODIFICACAO))
 
 
 def chamar_bot(cliente: socket, mensagem: str) -> None:
@@ -146,9 +152,7 @@ def chamar_bot(cliente: socket, mensagem: str) -> None:
     info_para_bot = f"{username}:{sala}|{mensagem}"
 
     enviar_mensagem_privada(info_para_bot, clientes_conectados["!bot!"])
-    resposta = clientes_conectados["!bot!"].recv(1024).decode(FORMATO_CODIFICACAO)
-    # TODO Tratar de mensagens 'para:' e 'sair|'
-    cliente.send(f"<bot> disse: {resposta}".encode(FORMATO_CODIFICACAO))
+
 
 
 def processar_mensagens(mensagem: str, cliente: socket):
@@ -165,6 +169,8 @@ def processar_mensagens(mensagem: str, cliente: socket):
     elif mensagem.startswith("/"):
         # Comandos especiais, responsabilidade do bot
         chamar_bot(cliente, mensagem)
+    elif cliente == clientes_conectados["!bot!"]:
+        processar_resposta_bot(mensagem)
     else:
         # Mensagens normais
         remetente = pegar_username_do_cliente(cliente)
