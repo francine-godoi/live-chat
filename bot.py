@@ -4,8 +4,7 @@ import socket
 import threading
 from datetime import datetime
 
-# Temporário, até implementar persistencia
-from servidor import clientes_conectados, salas, moderadores
+import database
 
 HOST = "127.0.0.1"
 PORT = 9999
@@ -39,34 +38,43 @@ def ajuda(cliente: str, bot_socket: socket) -> None:
     enviar_resposta_servidor(f'{cliente}|{comandos}', bot_socket)
 
 
-def historico(sala, bot_socket):
+def historico(cliente, sala, bot_socket):
     """mostra histórico do chat."""
     pass
 
 
-def hora(bot_socket):
+def hora(cliente: str, bot_socket: socket):
     """mostra a hora atual."""
     horas = datetime.now().strftime("%H:%M")
-    enviar_resposta_servidor(horas, bot_socket)
+    enviar_resposta_servidor(f'{cliente}|{horas}', bot_socket)
 
 
 def nome(nome_atual, novo_nome, sala, bot_socket):
     """Para alterar o nome de exibição do usuário."""
+    clientes_conectados = database.pegar_dados_banco('clientes_conectados')
+    salas = database.pegar_dados_banco('salas')
+    moderadores = database.pegar_dados_banco('moderadores')
+
     if novo_nome in clientes_conectados:
-        enviar_resposta_servidor("Username já existe", bot_socket)
+        enviar_resposta_servidor(f"{nome_atual}|Username já existe", bot_socket)
         # TODO Testar com usernames que já existem
 
-    clientes_conectados[novo_nome] = clientes_conectados[nome_atual]
-    del clientes_conectados[nome_atual]
+    #TODO precisa atualizar no servidor também
+    clientes_conectados.remove(nome_atual)
+    clientes_conectados.append(novo_nome)
 
     salas[sala].remove(nome_atual)
     salas[sala].append(novo_nome)
 
-    if nome_atual in moderadores:
+    if moderadores and nome_atual in moderadores:
         moderadores[novo_nome] = moderadores[nome_atual]
         del moderadores[nome_atual]
 
-    enviar_resposta_servidor(f"{nome_atual} agora se chama {novo_nome}", bot_socket)
+    database.salvar_dados_banco('clientes_conectados', clientes_conectados)
+    database.salvar_dados_banco('salas', salas)
+    database.salvar_dados_banco('moderadores', moderadores)
+
+    enviar_resposta_servidor(f"{novo_nome}|{nome_atual} agora se chama {novo_nome}", bot_socket)
 
 
 def ping(cliente: str, bot_socket):
@@ -74,17 +82,18 @@ def ping(cliente: str, bot_socket):
     enviar_resposta_servidor(f'{cliente}|pong', bot_socket)
 
 
-def privado(destinatario, mensagem, bot_socket):
+def privado(cliente:str, destinatario:str, mensagem:str, bot_socket:socket):
     """envia mensagem privada."""
-    resposta = f"para:{destinatario}|{mensagem}"
+    resposta = f"{cliente}|{destinatario}|{mensagem}"
     enviar_resposta_servidor(resposta, bot_socket)
 
 
 def sair(username, sala, bot_socket):
     """Para desconectar do chat."""
+    #TODO arrumar
     del clientes_conectados[username]
     salas[sala].remove(username)
-    enviar_resposta_servidor(f"sair|{username} sai da sala.", bot_socket)
+    enviar_resposta_servidor(f"sair:{username}|{username} sai da sala.", bot_socket)
 
 
 def stats(username, sala, bot_socket):
@@ -95,10 +104,11 @@ def stats(username, sala, bot_socket):
     pass
 
 
-def usuarios(sala, bot_socket):
+def usuarios(username, sala, bot_socket):
     """Para listar todos os usuários conectados."""
-    mensagem = "\n".join(usuario for usuario in salas[sala])
-    enviar_resposta_servidor(mensagem, bot_socket)
+    #TODO arrumar
+    mensagem = "\n".join(nome_usuario for nome_usuario in salas[sala])
+    enviar_resposta_servidor(f'{username}|{mensagem}', bot_socket)
 
 
 def banir(username, nome_usuario, sala, bot_socket):
@@ -108,7 +118,11 @@ def banir(username, nome_usuario, sala, bot_socket):
 
 def expulsar(username, nome_usuario, sala, bot_socket):
     """Desconecta usuário da sala, mas usuario pode voltar ao chat."""
-    pass
+    #TODO arrumar
+    if moderadores[username] == sala:
+        sair(nome_usuario, sala, bot_socket)
+    else:
+        enviar_resposta_servidor(f'{username}|"Apenas o moderador pode expulsar alguém da sala.', bot_socket)
 
 
 def extrair_dados_da_mensagem(informacao: str) -> tuple:
@@ -147,21 +161,21 @@ def processar_comando(mensagem: str, bot_socket: socket) -> None:
         case "/expulsar":
             expulsar(cliente, nome_usuario, sala, bot_socket)
         case "/historico":
-            historico(sala, bot_socket)
+            historico(cliente, sala, bot_socket)
         case "/hora":
-            hora(bot_socket)
+            hora(cliente, bot_socket)
         case "/nome":
             nome(cliente, nome_usuario, sala, bot_socket)
         case "/ping":
             ping(cliente, bot_socket)
         case "/privado":
-            privado(nome_usuario, texto_da_mensagem, bot_socket)
+            privado(cliente, nome_usuario, texto_da_mensagem, bot_socket)
         case "/sair":
             sair(cliente, sala, bot_socket)
         case "/stats":
             stats(cliente, sala, bot_socket)
         case "/usuarios":
-            usuarios(sala, bot_socket)
+            usuarios(cliente, sala, bot_socket)
         case _:
             enviar_resposta_servidor("Comando inválido", bot_socket)
 

@@ -3,26 +3,20 @@
 import socket
 import threading
 from collections import defaultdict
+from database import salvar_dados_banco
 
 
 FORMATO_CODIFICACAO = "utf-8"
 HOST = "127.0.0.1"
 PORT = 9999
 
-# TODO criar persistencia
-clientes_conectados = {}
+# TODO atualizar quando bot modifica db
+clientes_conectados = {} 
+lista_usernames = []
 moderadores = {}
+banidos = {}
 salas = defaultdict(list)
 salas["Geral"] = []
-
-
-# TODO: rever essa função, já tem enviar_mensagem_publica
-# def enviar_notificacao_publica(mensagem: str, nome_sala: str) -> None:
-#     """Notificação do sistema, enviados para os membros de uma determinada sala."""
-
-#     for username, cliente in clientes_conectados.items():
-#         if username in salas[nome_sala]:
-#             cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
 
 
 def pegar_username_escolhido(cliente: socket, mensagem: str) -> str | None:
@@ -58,6 +52,8 @@ def salvar_usuario_conectado(cliente: socket, mensagem: str) -> str | None:
     if not username:
         return None
     clientes_conectados[username] = cliente
+    lista_usernames.append(username)
+    salvar_dados_banco('clientes_conectados', lista_usernames)
     enviar_mensagem_privada("Conectado com sucesso.", cliente)
     return username
 
@@ -86,6 +82,7 @@ def adicionar_moderador_sala(sala: str, username: str) -> None:
 
     if sala not in salas:
         moderadores[username] = sala
+        salvar_dados_banco('moderadores', moderadores)
 
 
 def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
@@ -94,6 +91,7 @@ def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
     sala_escolhida = pegar_sala_escolhida(cliente)
     adicionar_moderador_sala(sala_escolhida, username)
     salas[sala_escolhida].append(username)
+    salvar_dados_banco('salas', salas)
 
     enviar_mensagem_publica(
         f"<{username}> entrou no chat.", sala_escolhida, remetente="Servidor"
@@ -138,10 +136,24 @@ def enviar_mensagem_privada(mensagem: str, cliente: socket) -> None:
     cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
 
 def processar_resposta_bot(resposta: str):
-    username, mensagem = resposta.split('|')
-    cliente = clientes_conectados[username]
-    # TODO Tratar de mensagens 'para:' e 'sair|'
-    cliente.send(f"<bot> disse: {mensagem}".encode(FORMATO_CODIFICACAO))
+    num_args = resposta.count('|')
+    if resposta.startswith('sair:'):        
+        info_usuario, mensagem = resposta.split('|') # 'sair:usuario|mensagem'
+        _, username = info_usuario.split(':') # 'sair:usuario'
+        
+        cliente = clientes_conectados[username]
+        sala = pegar_sala_do_cliente(cliente)
+        enviar_mensagem_publica(mensagem, sala, 'bot')
+
+    elif num_args == 1: # Mensagem privada do bot
+        username, mensagem = resposta.split('|') # username|mensagem
+        cliente = clientes_conectados[username]
+        enviar_mensagem_privada(f"<bot> disse: {mensagem}", cliente)
+
+    elif num_args == 2: # Mensagem Privada para outro usuário
+        remetente, destinatario, mensagem = resposta.split('|') # username|destinatario|mensagem
+        cliente = clientes_conectados[destinatario]
+        enviar_mensagem_privada(f"<{remetente}> disse: {mensagem}", cliente)
 
 
 def chamar_bot(cliente: socket, mensagem: str) -> None:
