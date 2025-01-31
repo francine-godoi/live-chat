@@ -3,16 +3,14 @@
 import socket
 import threading
 from collections import defaultdict
-from database import salvar_dados_banco
+import comandos_especiais as cmd_esp
 
 
 FORMATO_CODIFICACAO = "utf-8"
 HOST = "127.0.0.1"
 PORT = 9999
 
-# TODO atualizar quando bot modifica db
-clientes_conectados = {} 
-lista_usernames = []
+clientes_conectados = {}
 moderadores = {}
 banidos = {}
 salas = defaultdict(list)
@@ -52,8 +50,6 @@ def salvar_usuario_conectado(cliente: socket, mensagem: str) -> str | None:
     if not username:
         return None
     clientes_conectados[username] = cliente
-    lista_usernames.append(username)
-    salvar_dados_banco('clientes_conectados', lista_usernames)
     enviar_mensagem_privada("Conectado com sucesso.", cliente)
     return username
 
@@ -82,7 +78,6 @@ def adicionar_moderador_sala(sala: str, username: str) -> None:
 
     if sala not in salas:
         moderadores[username] = sala
-        salvar_dados_banco('moderadores', moderadores)
 
 
 def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
@@ -91,7 +86,6 @@ def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
     sala_escolhida = pegar_sala_escolhida(cliente)
     adicionar_moderador_sala(sala_escolhida, username)
     salas[sala_escolhida].append(username)
-    salvar_dados_banco('salas', salas)
 
     enviar_mensagem_publica(
         f"<{username}> entrou no chat.", sala_escolhida, remetente="Servidor"
@@ -135,36 +129,74 @@ def enviar_mensagem_privada(mensagem: str, cliente: socket) -> None:
 
     cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
 
-def processar_resposta_bot(resposta: str):
-    num_args = resposta.count('|')
-    if resposta.startswith('sair:'):        
-        info_usuario, mensagem = resposta.split('|') # 'sair:usuario|mensagem'
-        _, username = info_usuario.split(':') # 'sair:usuario'
-        
-        cliente = clientes_conectados[username]
-        sala = pegar_sala_do_cliente(cliente)
-        enviar_mensagem_publica(mensagem, sala, 'bot')
 
-    elif num_args == 1: # Mensagem privada do bot
-        username, mensagem = resposta.split('|') # username|mensagem
-        cliente = clientes_conectados[username]
-        enviar_mensagem_privada(f"<bot> disse: {mensagem}", cliente)
+def processar_comando_bot(
+    comando: str,
+    destinatario_cmd: str,
+    texto_da_mensagem: str,
+    sala_remetente: str,
+    remetente_cmd: str,
+) -> str:
+    """Processa os comandos enviados pelo usuário e os envia para a função que o executará
 
-    elif num_args == 2: # Mensagem Privada para outro usuário
-        remetente, destinatario, mensagem = resposta.split('|') # username|destinatario|mensagem
-        cliente = clientes_conectados[destinatario]
-        enviar_mensagem_privada(f"<{remetente}> disse: {mensagem}", cliente)
+    Args:
+        comando (str): comando que o usuário enviou
+        destinatario_cmd (str): usuário que será afetado pelo comando
+        texto_da_mensagem (str): mensagem enviada pelo usuário
+        sala_remetente (str): sala de quem enviou o comando
+        remetente_cmd (str): quem enviou o comando
+
+    Returns:
+        str: mensagem do bot depois de processar o comando
+    """
+
+    match comando:
+        case "/ajuda":
+            resposta = cmd_esp.ajuda()
+        case "/historico":
+            resposta = cmd_esp.historico(salas[sala_remetente])
+        case "/hora":
+            resposta = cmd_esp.hora()
+        case "/ping":
+            resposta = cmd_esp.ping()
+        case "/privado":
+            cmd_esp.privado(
+                remetente_cmd,
+                destinatario_cmd,
+                clientes_conectados[destinatario_cmd],
+                texto_da_mensagem,
+            )
+            resposta = None
+        case "/sair":
+            resposta = cmd_esp.sair(
+                remetente_cmd, salas[sala_remetente], moderadores, clientes_conectados
+            )
+        case "/stats":
+            resposta = cmd_esp.stats(salas[sala_remetente])
+        case "/usuarios":
+            resposta = cmd_esp.usuarios(salas[sala_remetente])
+        case _:
+            resposta = "Comando inválido"
+
+    return resposta
 
 
 def chamar_bot(cliente: socket, mensagem: str) -> None:
     """Envia a mensagem com o comando para o bot precessar"""
-    # TODO Verificar falta de conexão com bot
+
+    comando, nome_usuario, texto_da_mensagem = cmd_esp.extrair_dados_da_mensagem(
+        mensagem
+    )
     username = pegar_username_do_cliente(cliente)
     sala = pegar_sala_do_cliente(username)
-    info_para_bot = f"{username}:{sala}|{mensagem}"
-
-    enviar_mensagem_privada(info_para_bot, clientes_conectados["!bot!"])
-
+    resposta = processar_comando_bot(
+        comando, nome_usuario, texto_da_mensagem, sala, username
+    )
+    if resposta.find("saiu da sala"):
+        # TODO fechar a janela do cliente
+        enviar_mensagem_publica(resposta, sala, "bot")
+    else:
+        enviar_mensagem_privada(resposta, cliente)
 
 
 def processar_mensagens(mensagem: str, cliente: socket):
@@ -181,8 +213,6 @@ def processar_mensagens(mensagem: str, cliente: socket):
     elif mensagem.startswith("/"):
         # Comandos especiais, responsabilidade do bot
         chamar_bot(cliente, mensagem)
-    elif cliente == clientes_conectados["!bot!"]:
-        processar_resposta_bot(mensagem)
     else:
         # Mensagens normais
         remetente = pegar_username_do_cliente(cliente)
@@ -194,8 +224,12 @@ def receber_mensagens(cliente: socket) -> None:
     """Recebe e processa as mensagens dos clientes."""
 
     while True:
-        mensagem = cliente.recv(2048).decode(FORMATO_CODIFICACAO)
-        processar_mensagens(mensagem, cliente)
+        try:
+            mensagem = cliente.recv(2048).decode(FORMATO_CODIFICACAO)
+        except:
+            cliente.close()
+        else:
+            processar_mensagens(mensagem, cliente)
 
 
 def aceitar_conexao_cliente(servidor: socket) -> None:
