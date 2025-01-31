@@ -80,7 +80,15 @@ def enviar_mensagem(cliente: socket) -> None:
         while not mensagem:
             # '!username:nome_usuario' é usado na conexão inicial com cliente
             mensagem = input().strip().replace("!username:", "")
-        cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
+        try:
+            cliente.send(mensagem.encode(FORMATO_CODIFICACAO))
+        except:
+            cliente.close()            
+            exit(0)
+        if mensagem.strip() == '/sair':
+            cliente.close()                  
+            exit(0)
+            
 
 
 def receber_mensagem(cliente: socket) -> None:
@@ -90,7 +98,13 @@ def receber_mensagem(cliente: socket) -> None:
         cliente (socket): socket para comunicação com o servidor
     """
     while True:
-        mensagem = cliente.recv(2048).decode(FORMATO_CODIFICACAO)
+        try:
+            mensagem = cliente.recv(2048).decode(FORMATO_CODIFICACAO)
+            if not mensagem:
+                break            
+        except:
+            cliente.close()            
+            exit(0)           
         print(mensagem)
 
 
