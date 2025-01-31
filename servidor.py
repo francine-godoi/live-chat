@@ -3,7 +3,10 @@
 import socket
 import threading
 from collections import defaultdict
+from datetime import datetime
+
 import comandos_especiais as cmd_esp
+from database import salvar_historico_chat, limpar_historico
 
 
 FORMATO_CODIFICACAO = "utf-8"
@@ -12,7 +15,7 @@ PORT = 9999
 
 clientes_conectados = {}
 moderadores = {}
-banidos = {}
+banidos = defaultdict(list)
 salas = defaultdict(list)
 salas["Geral"] = []
 
@@ -54,20 +57,20 @@ def salvar_usuario_conectado(cliente: socket, mensagem: str) -> str | None:
     return username
 
 
-def enviar_salas_disponiveis(cliente: socket) -> None:
+def enviar_salas_disponiveis(cliente: socket, username: str) -> None:
     """Envia para o cliente as salas disponíveis"""
 
-    salas_disponiveis = "|".join(sala for sala in salas)
+    salas_disponiveis = "|".join(sala for sala in salas if username not in banidos[sala])
     cliente.send(salas_disponiveis.encode(FORMATO_CODIFICACAO))
 
 
-def pegar_sala_escolhida(cliente: socket) -> str:
+def pegar_sala_escolhida(cliente: socket, username: str) -> str:
     """Pega sala escolhida
 
     Returns:
         str: nome da sala escolhida
     """
-    enviar_salas_disponiveis(cliente)
+    enviar_salas_disponiveis(cliente, username)
 
     sala_escolhida = cliente.recv(25).decode(FORMATO_CODIFICACAO)
     return sala_escolhida
@@ -83,7 +86,11 @@ def adicionar_moderador_sala(sala: str, username: str) -> None:
 def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
     """Vincula o cliente a sala de conversas"""
 
-    sala_escolhida = pegar_sala_escolhida(cliente)
+    sala_escolhida = pegar_sala_escolhida(cliente, username)
+    if username in banidos[sala_escolhida]:
+        enviar_mensagem_privada('Você foir banido dessa sala.', cliente)
+        clientes_conectados[username].close()
+        return
     adicionar_moderador_sala(sala_escolhida, username)
     salas[sala_escolhida].append(username)
 
@@ -119,9 +126,14 @@ def pegar_sala_do_cliente(username: str) -> str | None:
 def enviar_mensagem_publica(mensagem: str, sala_remetente: str, remetente: str) -> None:
     """Envia mensagem para todos os membros da sala do cliente"""
 
+    timestamp = datetime.now().strftime('%d/%m/%Y %H:%M')
+    mensagem_formatada = f"[{timestamp}] <{remetente}> disse: {mensagem}"
+
     for username, cliente in clientes_conectados.items():
         if username in salas[sala_remetente] and username != remetente:
-            cliente.send(f"<{remetente}> disse: {mensagem}".encode(FORMATO_CODIFICACAO))
+            cliente.send(mensagem_formatada.encode(FORMATO_CODIFICACAO))
+
+    salvar_historico_chat(sala_remetente, mensagem_formatada)
 
 
 def enviar_mensagem_privada(mensagem: str, cliente: socket) -> None:
@@ -153,26 +165,35 @@ def processar_comando_bot(
     match comando:
         case "/ajuda":
             resposta = cmd_esp.ajuda()
+        case "/banir":
+            resposta = cmd_esp.banir(banidos, destinatario_cmd, sala_remetente, remetente_cmd, moderadores, salas, clientes_conectados)
+        case '/expulsar':
+            resposta = cmd_esp.expulsar(destinatario_cmd, sala_remetente, remetente_cmd, moderadores, salas, clientes_conectados)        
         case "/historico":
-            resposta = cmd_esp.historico(salas[sala_remetente])
+            resposta = cmd_esp.historico(sala_remetente)
         case "/hora":
             resposta = cmd_esp.hora()
+        case '/nome':
+            if destinatario_cmd in clientes_conectados:
+                return 'Usuário já existe'
+            resposta = cmd_esp.nome(remetente_cmd, destinatario_cmd, clientes_conectados, salas[sala_remetente], moderadores)
         case "/ping":
             resposta = cmd_esp.ping()
         case "/privado":
-            cmd_esp.privado(
+            resposta = cmd_esp.privado(
                 remetente_cmd,
                 destinatario_cmd,
-                clientes_conectados[destinatario_cmd],
-                texto_da_mensagem,
-            )
-            resposta = None
-        case "/sair":
+                clientes_conectados,
+                texto_da_mensagem, 
+                destinatario_cmd, 
+                salas[sala_remetente]
+            )            
+        case "/sair":                        
             resposta = cmd_esp.sair(
                 remetente_cmd, salas[sala_remetente], moderadores, clientes_conectados
             )
         case "/stats":
-            resposta = cmd_esp.stats(salas[sala_remetente])
+            resposta = cmd_esp.stats(sala_remetente)
         case "/usuarios":
             resposta = cmd_esp.usuarios(salas[sala_remetente])
         case _:
@@ -181,22 +202,35 @@ def processar_comando_bot(
     return resposta
 
 
+def processar_respostas_bot(resposta: str,  destinatario_cmd: str, remetente_cmd: str, sala: str, cliente: socket):
+    if resposta == 'banido' :
+        enviar_mensagem_publica(f'{destinatario_cmd} foi banido da sala', sala, 'bot')
+    elif resposta == 'enviado':
+        enviar_mensagem_privada(f'<bot> disse: Mensagem privada enviada com sucesso para {destinatario_cmd}.', cliente)
+    elif resposta == 'expulso' :
+        enviar_mensagem_publica(f'{destinatario_cmd} foi expulso da sala', sala, 'bot')
+    elif resposta == 'nome':
+        enviar_mensagem_publica(f'<bot> disse: {remetente_cmd} agora se chama {destinatario_cmd}.', sala, 'bot')
+    elif resposta.find("saiu da sala") > 0:
+        enviar_mensagem_publica(resposta, sala, "bot")
+    else:
+        enviar_mensagem_privada(f'<bot> disse: {resposta}', cliente)
+
+
 def chamar_bot(cliente: socket, mensagem: str) -> None:
     """Envia a mensagem com o comando para o bot precessar"""
 
-    comando, nome_usuario, texto_da_mensagem = cmd_esp.extrair_dados_da_mensagem(
+    comando, destinatario_cmd, texto_da_mensagem = cmd_esp.extrair_dados_da_mensagem(
         mensagem
     )
-    username = pegar_username_do_cliente(cliente)
-    sala = pegar_sala_do_cliente(username)
+    remetente_cmd = pegar_username_do_cliente(cliente)
+    sala_remetente = pegar_sala_do_cliente(remetente_cmd)
+
     resposta = processar_comando_bot(
-        comando, nome_usuario, texto_da_mensagem, sala, username
+        comando, destinatario_cmd, texto_da_mensagem, sala_remetente, remetente_cmd
     )
-    if resposta.find("saiu da sala"):
-        # TODO fechar a janela do cliente
-        enviar_mensagem_publica(resposta, sala, "bot")
-    else:
-        enviar_mensagem_privada(resposta, cliente)
+    processar_respostas_bot(resposta, destinatario_cmd, remetente_cmd, sala_remetente, cliente)
+
 
 
 def processar_mensagens(mensagem: str, cliente: socket):
@@ -226,10 +260,10 @@ def receber_mensagens(cliente: socket) -> None:
     while True:
         try:
             mensagem = cliente.recv(2048).decode(FORMATO_CODIFICACAO)
-        except:
-            cliente.close()
-        else:
-            processar_mensagens(mensagem, cliente)
+        except Exception as e:
+            cliente.close()    
+            break    
+        processar_mensagens(mensagem, cliente)
 
 
 def aceitar_conexao_cliente(servidor: socket) -> None:
@@ -256,10 +290,10 @@ def iniciar_servidor() -> socket:
         print("Servidor iniciado.")
     except socket.gaierror:
         print("Não foi possivel iniciar o servidor.")
-        exit()
+        exit(0)
     except Exception as e:
         print(f"Um erro ocorreu ao tentar iniciar o servidor: {e}")
-        exit()
+        exit(0)
 
     return servidor
 
@@ -268,6 +302,7 @@ def main() -> None:
     """Inicia o programa"""
 
     servidor = iniciar_servidor()
+    limpar_historico()
     aceitar_conexao_cliente(servidor)
 
 
