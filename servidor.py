@@ -90,8 +90,9 @@ def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
 
     sala_escolhida = pegar_sala_escolhida(cliente, username)
     if username in banidos[sala_escolhida]:
-        enviar_mensagem_privada("Você foir banido dessa sala.", cliente)
+        enviar_mensagem_privada("Você foi banido dessa sala.", cliente)
         clientes_conectados[username].close()
+        del clientes_conectados[username]        
         return
     adicionar_moderador_sala(sala_escolhida, username)
     salas[sala_escolhida].append(username)
