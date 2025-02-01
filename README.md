@@ -37,7 +37,7 @@ Terceiro projeto (via terminal) aplicando conceitos vistos durante minha jornada
 7. Bot do Chat: Adicionar um bot no chat que responda automaticamente a comandos que alteram o comportamento do chat.
     - Comandos Especiais:
       - /sair: Para desconectar do chat.
-      - /help: Para listar os comandos disponíveis.
+      - /ajuda: Para listar os comandos disponíveis.
       - /usuarios: Para listar todos os usuários conectados.
       - /nome novo_nome: Para alterar o nome de exibição do usuário.
       - /privado nome_usuario mensagem: envia mensagem privada.
