@@ -5,7 +5,7 @@ import threading
 from collections import defaultdict
 from datetime import datetime
 
-import comandos_especiais as cmd_esp
+import bot
 from database import salvar_historico_chat, limpar_historico
 
 
@@ -60,7 +60,9 @@ def salvar_usuario_conectado(cliente: socket, mensagem: str) -> str | None:
 def enviar_salas_disponiveis(cliente: socket, username: str) -> None:
     """Envia para o cliente as salas disponíveis"""
 
-    salas_disponiveis = "|".join(sala for sala in salas if username not in banidos[sala])
+    salas_disponiveis = "|".join(
+        sala for sala in salas if username not in banidos[sala]
+    )
     cliente.send(salas_disponiveis.encode(FORMATO_CODIFICACAO))
 
 
@@ -88,7 +90,7 @@ def vincular_cliente_e_sala_escolhida(cliente: socket, username: str) -> None:
 
     sala_escolhida = pegar_sala_escolhida(cliente, username)
     if username in banidos[sala_escolhida]:
-        enviar_mensagem_privada('Você foir banido dessa sala.', cliente)
+        enviar_mensagem_privada("Você foir banido dessa sala.", cliente)
         clientes_conectados[username].close()
         return
     adicionar_moderador_sala(sala_escolhida, username)
@@ -126,7 +128,7 @@ def pegar_sala_do_cliente(username: str) -> str | None:
 def enviar_mensagem_publica(mensagem: str, sala_remetente: str, remetente: str) -> None:
     """Envia mensagem para todos os membros da sala do cliente"""
 
-    timestamp = datetime.now().strftime('%d/%m/%Y %H:%M')
+    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
     mensagem_formatada = f"[{timestamp}] <{remetente}> disse: {mensagem}"
 
     for username, cliente in clientes_conectados.items():
@@ -164,63 +166,102 @@ def processar_comando_bot(
 
     match comando:
         case "/ajuda":
-            resposta = cmd_esp.ajuda()
+            resposta = bot.ajuda()            
         case "/banir":
-            resposta = cmd_esp.banir(banidos, destinatario_cmd, sala_remetente, remetente_cmd, moderadores, salas, clientes_conectados)
-        case '/expulsar':
-            resposta = cmd_esp.expulsar(destinatario_cmd, sala_remetente, remetente_cmd, moderadores, salas, clientes_conectados)        
+            resposta = bot.banir(
+                banidos,
+                destinatario_cmd,
+                sala_remetente,
+                remetente_cmd,
+                moderadores,
+                salas,
+                clientes_conectados,
+            )
+        case "/expulsar":
+            resposta = bot.expulsar(
+                destinatario_cmd,
+                sala_remetente,
+                remetente_cmd,
+                moderadores,
+                salas,
+                clientes_conectados,
+            )
         case "/historico":
-            resposta = cmd_esp.historico(sala_remetente)
+            resposta = bot.historico(sala_remetente)
         case "/hora":
-            resposta = cmd_esp.hora()
-        case '/nome':
+            resposta = bot.hora()
+        case "/nome":
             if destinatario_cmd in clientes_conectados:
-                return 'Usuário já existe'
-            resposta = cmd_esp.nome(remetente_cmd, destinatario_cmd, clientes_conectados, salas[sala_remetente], moderadores)
-        case "/ping":
-            resposta = cmd_esp.ping()
-        case "/privado":
-            resposta = cmd_esp.privado(
+                return "Usuário já existe"
+            resposta = bot.nome(
                 remetente_cmd,
                 destinatario_cmd,
                 clientes_conectados,
-                texto_da_mensagem, 
-                destinatario_cmd, 
-                salas[sala_remetente]
-            )            
-        case "/sair":                        
-            resposta = cmd_esp.sair(
+                salas[sala_remetente],
+                moderadores,
+            )
+        case "/ping":
+            resposta = bot.ping()
+        case "/privado":
+            resposta = bot.privado(
+                remetente_cmd,
+                destinatario_cmd,
+                clientes_conectados,
+                texto_da_mensagem,
+                destinatario_cmd,
+                salas[sala_remetente],
+            )
+        case "/sair":
+            resposta = bot.sair(
                 remetente_cmd, salas[sala_remetente], moderadores, clientes_conectados
             )
         case "/stats":
-            resposta = cmd_esp.stats(sala_remetente)
+            resposta = bot.stats(sala_remetente)
         case "/usuarios":
-            resposta = cmd_esp.usuarios(salas[sala_remetente])
+            resposta = bot.usuarios(salas[sala_remetente])
         case _:
             resposta = "Comando inválido"
 
     return resposta
 
 
-def processar_respostas_bot(resposta: str,  destinatario_cmd: str, remetente_cmd: str, sala: str, cliente: socket):
-    if resposta == 'banido' :
-        enviar_mensagem_publica(f'{destinatario_cmd} foi banido da sala', sala, 'bot')
-    elif resposta == 'enviado':
-        enviar_mensagem_privada(f'<bot> disse: Mensagem privada enviada com sucesso para {destinatario_cmd}.', cliente)
-    elif resposta == 'expulso' :
-        enviar_mensagem_publica(f'{destinatario_cmd} foi expulso da sala', sala, 'bot')
-    elif resposta == 'nome':
-        enviar_mensagem_publica(f'<bot> disse: {remetente_cmd} agora se chama {destinatario_cmd}.', sala, 'bot')
+def processar_respostas_bot(
+    resposta: str, destinatario_cmd: str, remetente_cmd: str, sala: str, cliente: socket
+) -> None:
+    """_summary_
+
+    Args:
+        resposta (str): resposta do bot apos processar um comando
+        destinatario_cmd (str): usuario que é afetado pelo comando
+        remetente_cmd (str): quem utilizou o comando
+        sala (str): nome da sala de quem utilizou o comando
+        cliente (socket): socket de comunicação com quem utilizou o comando
+    """
+    if resposta == "banido":
+        enviar_mensagem_publica(f"{destinatario_cmd} foi banido da sala", sala, "bot")
+    elif resposta == "enviado":
+        enviar_mensagem_privada(
+            f"<bot> disse: Mensagem privada enviada com sucesso para {destinatario_cmd}.",
+            cliente,
+        )
+    elif resposta == "expulso":
+        enviar_mensagem_publica(f"{destinatario_cmd} foi expulso da sala", sala, "bot")
+    elif resposta == "nome":
+        enviar_mensagem_publica(
+            f"<bot> disse: {remetente_cmd} agora se chama {destinatario_cmd}.",
+            sala,
+            "bot",
+        )
     elif resposta.find("saiu da sala") > 0:
         enviar_mensagem_publica(resposta, sala, "bot")
     else:
-        enviar_mensagem_privada(f'<bot> disse: {resposta}', cliente)
+        enviar_mensagem_privada(f"<bot> disse: {resposta}", cliente)
 
 
 def chamar_bot(cliente: socket, mensagem: str) -> None:
     """Envia a mensagem com o comando para o bot precessar"""
 
-    comando, destinatario_cmd, texto_da_mensagem = cmd_esp.extrair_dados_da_mensagem(
+    comando, destinatario_cmd, texto_da_mensagem = bot.extrair_dados_da_mensagem(
         mensagem
     )
     remetente_cmd = pegar_username_do_cliente(cliente)
@@ -229,11 +270,12 @@ def chamar_bot(cliente: socket, mensagem: str) -> None:
     resposta = processar_comando_bot(
         comando, destinatario_cmd, texto_da_mensagem, sala_remetente, remetente_cmd
     )
-    processar_respostas_bot(resposta, destinatario_cmd, remetente_cmd, sala_remetente, cliente)
+    processar_respostas_bot(
+        resposta, destinatario_cmd, remetente_cmd, sala_remetente, cliente
+    )
 
 
-
-def processar_mensagens(mensagem: str, cliente: socket):
+def processar_mensagens(mensagem: str, cliente: socket) -> None:
     """Envia a mensagem para a função adequada"""
 
     if mensagem.startswith("!username"):
@@ -260,9 +302,9 @@ def receber_mensagens(cliente: socket) -> None:
     while True:
         try:
             mensagem = cliente.recv(2048).decode(FORMATO_CODIFICACAO)
-        except Exception as e:
-            cliente.close()    
-            break    
+        except:
+            cliente.close()
+            break
         processar_mensagens(mensagem, cliente)
 
 
